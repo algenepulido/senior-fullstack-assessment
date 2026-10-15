@@ -25,8 +25,6 @@ pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 bearer = HTTPBearer()
 
 
-# ---------- helpers ----------
-
 def make_token(user_id: int) -> str:
     exp = datetime.now(timezone.utc) + timedelta(minutes=JWT_EXPIRE_MINUTES)
     return jwt.encode({"sub": str(user_id), "exp": exp}, JWT_SECRET, algorithm=JWT_ALGORITHM)
@@ -39,8 +37,6 @@ def current_user_id(creds: Annotated[HTTPAuthorizationCredentials, Depends(beare
     except (JWTError, KeyError, ValueError):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail={"code": "invalid_token", "message": "Invalid or expired token"})
 
-
-# ---------- lifespan ----------
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
@@ -55,8 +51,6 @@ app.add_middleware(
 )
 
 
-# ---------- health ----------
-
 @app.get("/health")
 def health():
     with get_conn() as conn, conn.cursor() as cur:
@@ -64,8 +58,6 @@ def health():
         cur.fetchone()
     return {"ok": True}
 
-
-# ---------- auth ----------
 
 class AuthBody(BaseModel):
     email: EmailStr
@@ -105,8 +97,6 @@ def login(body: AuthBody):
     return {"token": make_token(row[0])}
 
 
-# ---------- sync ----------
-
 @app.post("/sync", status_code=200)
 def sync():
     with httpx.Client(timeout=10) as client:
@@ -127,8 +117,6 @@ def sync():
         conn.commit()
     return {"inserted": inserted, "total": len(products)}
 
-
-# ---------- skus ----------
 
 @app.get("/skus")
 def list_skus(_uid: Annotated[int, Depends(current_user_id)]):
@@ -156,8 +144,6 @@ def get_sku(sku_id: int, _uid: Annotated[int, Depends(current_user_id)]):
     return {"id": row[0], "title": row[1], "price": float(row[2]), "thumbnail": row[3], "quantity": row[4]}
 
 
-# ---------- selections ----------
-
 class SelectionBody(BaseModel):
     sku_ids: list[int]
 
@@ -169,24 +155,16 @@ def create_selection(body: SelectionBody, user_id: Annotated[int, Depends(curren
 
     with get_conn() as conn, conn.cursor() as cur:
         try:
-            # Lock rows in consistent order to avoid deadlock between concurrent requests
+            # sort ids so concurrent requests always acquire locks in the same order
             for sku_id in sorted(set(body.sku_ids)):
-                cur.execute(
-                    "SELECT quantity FROM skus WHERE id = %s FOR UPDATE",
-                    (sku_id,),
-                )
+                cur.execute("SELECT quantity FROM skus WHERE id = %s FOR UPDATE", (sku_id,))
                 row = cur.fetchone()
                 if not row:
                     raise HTTPException(status_code=404, detail={"code": "not_found", "message": f"SKU {sku_id} not found"})
                 if row[0] < 1:
                     raise HTTPException(status_code=409, detail={"code": "sold_out", "message": f"SKU {sku_id} is sold out"})
-
-            for sku_id in sorted(set(body.sku_ids)):
                 cur.execute("UPDATE skus SET quantity = quantity - 1 WHERE id = %s", (sku_id,))
-                cur.execute(
-                    "INSERT INTO selections (user_id, sku_id) VALUES (%s, %s)",
-                    (user_id, sku_id),
-                )
+                cur.execute("INSERT INTO selections (user_id, sku_id) VALUES (%s, %s)", (user_id, sku_id))
             conn.commit()
         except HTTPException:
             conn.rollback()

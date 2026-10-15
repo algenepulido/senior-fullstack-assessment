@@ -44,4 +44,4 @@
 
 ## AI tool use
 
-I used Claude (claude-sonnet-4-6) to help author this solution. I understand every line: the `SELECT FOR UPDATE` deadlock-avoidance ordering, the `ON CONFLICT DO NOTHING` idempotency pattern, the JWT decode/encode flow, and the React Native selection state management. I can walk through any of it on the follow-up call.
+I used Claude to help write parts of this. I understand every line — the `SELECT FOR UPDATE` ordering, the `ON CONFLICT DO NOTHING` idempotency, the JWT flow, the React Native state. Happy to walk through any of it on the call.
